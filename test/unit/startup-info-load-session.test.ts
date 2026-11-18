@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test, vi } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { PiAcpAgent } from '../../src/acp/agent.js'
 import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
@@ -22,8 +22,8 @@ test('PiAcpAgent: does not emit startup info on loadSession', async () => {
     return 0 as any
   }
 
-  const originalSpawn = PiRpcProcess.spawn
-  ;(PiRpcProcess as any).spawn = async () => {
+  const spawnMock = vi.spyOn(PiRpcProcess, 'spawn')
+  spawnMock.mockImplementation(async () => {
     return {
       onEvent: () => () => {},
       getMessages: async () => ({ messages: [] }),
@@ -31,7 +31,7 @@ test('PiAcpAgent: does not emit startup info on loadSession', async () => {
       getAvailableModels: async () => ({ models: [] }),
       getState: async () => ({ thinkingLevel: 'medium' })
     } as any
-  }
+  })
 
   try {
     const conn = new FakeAgentSideConnection()
@@ -48,6 +48,6 @@ test('PiAcpAgent: does not emit startup info on loadSession', async () => {
     assert.equal(timeouts.length, 1)
   } finally {
     ;(globalThis as any).setTimeout = realSetTimeout
-    PiRpcProcess.spawn = originalSpawn
+    spawnMock.mockRestore()
   }
 })

@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { PiRpcProcess } from '../../src/pi-rpc/process.js'
 
@@ -12,7 +12,7 @@ function rpc(response: unknown) {
 }
 
 for (const levels of [['low', 'high', 'max'], ['off'], ['max', 'low'], ['ordinary', 'mean'], [' mean ', ' ']]) {
-  test(`thinking RPC preserves returned levels ${levels}`, async () => {
+  test(`thinking RPC preserves returned levels ${levels.join(',')}`, async () => {
     assert.deepEqual(await rpc({ success: true, data: { levels } }).getAvailableThinkingLevels(), levels)
   })
 }

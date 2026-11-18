@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { PiAcpSession } from '../../src/acp/session.js'
 import { FakeAgentSideConnection, FakePiRpcProcess, asAgentConn } from '../helpers/fakes.js'
@@ -135,4 +135,31 @@ test('PiAcpSession: ignores duplicate and malformed names but forwards a cleared
 
   const titles = conn.updates.flatMap(({ update }) => ('title' in update ? [update.title] : []))
   assert.deepEqual(titles, ['Manual title', null])
+})
+
+test('PiAcpSession: setSessionName waits for title notification delivery', async t => {
+  const conn = new FakeAgentSideConnection()
+  const proc = Object.assign(new FakePiRpcProcess(), { async setSessionName() {} })
+  const session = createSession(conn, proc)
+  let release: (() => void) | undefined
+  const delivery = new Promise<void>(resolve => {
+    release = resolve
+  })
+  t.onTestFinished(() => release?.())
+  const update = conn.sessionUpdate.bind(conn)
+  conn.sessionUpdate = async params => {
+    if ('title' in params.update) await delivery
+    await update(params)
+  }
+  let finished = false
+  const named = session.setSessionName('Manual title').then(() => {
+    finished = true
+  })
+  void named.catch(() => {})
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(finished, false)
+  release?.()
+  await named
+  assert.equal(finished, true)
+  assert.equal(conn.updates.at(-1)?.update.sessionUpdate, 'session_info_update')
 })

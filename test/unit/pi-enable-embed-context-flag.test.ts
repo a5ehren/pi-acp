@@ -1,4 +1,4 @@
-import test, { afterEach, beforeEach } from 'node:test'
+import { test, afterEach, beforeEach } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { PiAcpAgent } from '../../src/acp/agent.js'
 import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'

@@ -1,13 +1,25 @@
-import type { AgentSideConnection } from '@agentclientprotocol/sdk'
+import type { PiAcpClient } from '../../src/acp/client.js'
+import { methods, type SessionNotification, type RequestPermissionRequest } from '@agentclientprotocol/sdk/unstable'
+import assert from 'node:assert/strict'
 import type { PiRpcEvent, PiSessionStats } from '../../src/pi-rpc/process.js'
 
-type SessionUpdateMsg = Parameters<AgentSideConnection['sessionUpdate']>[0]
+type SessionUpdateMsg = SessionNotification
 
 export class FakeAgentSideConnection {
   readonly updates: SessionUpdateMsg[] = []
   readonly permissionRequests: unknown[] = []
   nextPermissionResponse: { outcome: { outcome: 'selected'; optionId: string } | { outcome: 'cancelled' } } = {
     outcome: { outcome: 'selected', optionId: 'allow' }
+  }
+
+  async notify(method: string, msg: SessionUpdateMsg): Promise<void> {
+    assert.equal(method, methods.client.session.update)
+    await this.sessionUpdate(msg)
+  }
+
+  async request(method: string, params: RequestPermissionRequest) {
+    assert.equal(method, methods.client.session.requestPermission)
+    return this.requestPermission(params)
   }
 
   async sessionUpdate(msg: SessionUpdateMsg): Promise<void> {
@@ -81,7 +93,6 @@ export class FakePiRpcProcess {
   }
 }
 
-export function asAgentConn(conn: FakeAgentSideConnection): AgentSideConnection {
-  // We only implement the method(s) used by PiAcpSession in tests.
-  return conn as unknown as AgentSideConnection
+export function asAgentConn(conn: FakeAgentSideConnection): PiAcpClient {
+  return conn
 }

@@ -1,8 +1,13 @@
-import test from 'node:test'
+import { test } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { getAuthMethods, PI_SETUP_METHOD_ID } from '../../src/acp/auth.js'
 
-test('getAuthMethods: includes Zed terminal-auth metadata when enabled', () => {
+test('getAuthMethods: includes Zed terminal-auth metadata when enabled', t => {
+  const argv = process.argv
+  process.argv = [process.execPath, 'pi-acp']
+  t.onTestFinished(() => {
+    process.argv = argv
+  })
   const methods = getAuthMethods({ supportsTerminalAuthMeta: true })
   assert.equal(methods.length, 1)
   const m: any = methods[0]

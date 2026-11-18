@@ -1,14 +1,15 @@
+import type { PiAcpClient } from './client.js'
 import type {
-  AgentSideConnection,
   ContentBlock,
   McpServer,
   PermissionOption,
+  RequestPermissionResponse,
   SessionUpdate,
   ToolCallContent,
   ToolCallLocation,
   ToolKind
-} from '@agentclientprotocol/sdk'
-import { RequestError } from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
+import { RequestError, methods } from '@agentclientprotocol/sdk/unstable'
 import { readFileSync } from 'node:fs'
 import { isAbsolute, resolve as resolvePath } from 'node:path'
 import {
@@ -37,7 +38,7 @@ import { toolResultToText } from './translate/pi-tools.js'
 type SessionCreateParams = {
   cwd: string
   mcpServers: McpServer[]
-  conn: AgentSideConnection
+  conn: PiAcpClient
   fileCommands?: import('./slash-commands.js').FileSlashCommand[]
   piCommand?: string
 }
@@ -58,7 +59,7 @@ type QueuedTurn = {
   reject: (err: unknown) => void
 }
 
-type PermissionResponse = Awaited<ReturnType<AgentSideConnection['requestPermission']>>
+type PermissionResponse = RequestPermissionResponse
 
 const CONFIRM_PERMISSION_OPTIONS: PermissionOption[] = [
   { optionId: 'yes', name: 'Yes', kind: 'allow_once' },
@@ -192,7 +193,7 @@ export class SessionManager {
     const s = this.sessions.get(sessionId)
     if (!s) return
     try {
-      s.proc.dispose?.()
+      s.dispose()
     } catch {
       // ignore
     }
@@ -292,7 +293,7 @@ export class PiAcpSession {
   private titleUpdateQueue: Promise<void> = Promise.resolve()
 
   readonly proc: PiRpcProcess
-  private readonly conn: AgentSideConnection
+  private readonly conn: PiAcpClient
   private readonly fileCommands: FileSlashCommand[]
 
   // Used to map abort semantics to ACP stopReason.
@@ -323,13 +324,15 @@ export class PiAcpSession {
   // Ensure `session/update` notifications are sent in order and can be awaited
   // before completing a `session/prompt` request.
   private lastEmit: Promise<void> = Promise.resolve()
+  private disposed = false
+  private readonly unsubscribe: () => void
 
   constructor(opts: {
     sessionId: string
     cwd: string
     mcpServers: McpServer[]
     proc: PiRpcProcess
-    conn: AgentSideConnection
+    conn: PiAcpClient
     fileCommands?: FileSlashCommand[]
     autoTitle?: boolean
   }) {
@@ -341,7 +344,19 @@ export class PiAcpSession {
     this.fileCommands = opts.fileCommands ?? []
     this.initialTitlePending = opts.autoTitle ?? false
 
-    this.proc.onEvent(ev => this.handlePiEvent(ev))
+    this.unsubscribe = this.proc.onEvent(ev => this.handlePiEvent(ev))
+  }
+
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this.unsubscribe()
+    this.cancelRequested = true
+    this.pendingTurn?.resolve('cancelled')
+    this.pendingTurn = null
+    for (const turn of this.turnQueue.splice(0)) turn.resolve('cancelled')
+    this.inAgentLoop = false
+    this.proc.dispose?.()
   }
 
   setStartupInfo(text: string) {
@@ -365,6 +380,7 @@ export class PiAcpSession {
   }
 
   async prompt(message: string, images: unknown[] = [], title?: string): Promise<StopReason> {
+    if (this.disposed) throw new Error('Pi session is closed')
     // pi RPC mode disables slash command expansion, so we do it here.
     const expandedMessage = expandSlashCommand(message, this.fileCommands)
 
@@ -431,7 +447,7 @@ export class PiAcpSession {
   async setSessionName(name: string): Promise<void> {
     return this.enqueueTitleUpdate(async () => {
       await this.proc.setSessionName(name)
-      this.publishTitle(name)
+      await this.publishTitle(name)
     })
   }
 
@@ -461,13 +477,13 @@ export class PiAcpSession {
         const state = (await this.proc.getState()) as { sessionName?: unknown } | null
         const currentTitle = typeof state?.sessionName === 'string' ? state.sessionName.trim() : ''
         if (currentTitle) {
-          this.publishTitle(currentTitle)
+          await this.publishTitle(currentTitle)
           return
         }
         if (this.lastPublishedTitle) return
 
         await this.proc.setSessionName(title)
-        this.publishTitle(title)
+        await this.publishTitle(title)
       })
     } catch {
       // Auto-titling is best-effort and must not fail the completed prompt.
@@ -478,7 +494,7 @@ export class PiAcpSession {
     // Serialize update delivery.
     this.lastEmit = this.lastEmit
       .then(() =>
-        this.conn.sessionUpdate({
+        this.conn.notify(methods.client.session.update, {
           sessionId: this.sessionId,
           update
         })
@@ -641,7 +657,7 @@ export class PiAcpSession {
     switch (type) {
       case 'session_info_changed': {
         const name = (ev as { name?: unknown }).name
-        if (typeof name === 'string' || name === undefined) this.publishTitle(name ?? null)
+        if (typeof name === 'string' || name === undefined) void this.publishTitle(name ?? null)
         break
       }
 
@@ -1061,7 +1077,7 @@ export class PiAcpSession {
     options: PermissionOption[]
   ): Promise<PermissionResponse | null> {
     try {
-      return await this.conn.requestPermission({
+      return await this.conn.request(methods.client.session.requestPermission, {
         sessionId: this.sessionId,
         toolCall: extensionUiToolCall(id, ev),
         options

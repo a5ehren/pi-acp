@@ -1,7 +1,7 @@
+import type { PiAcpClient } from './client.js'
 import {
   RequestError,
-  type Agent as ACPAgent,
-  type AgentSideConnection,
+  methods,
   type AuthenticateRequest,
   type CancelNotification,
   type InitializeRequest,
@@ -22,7 +22,7 @@ import {
   type StopReason,
   type DeleteSessionRequest,
   type DeleteSessionResponse
-} from '@agentclientprotocol/sdk'
+} from '@agentclientprotocol/sdk/unstable'
 import { getAuthMethods } from './auth.js'
 import { SessionManager, type PiAcpSession } from './session.js'
 import { SessionStore } from './session-store.js'
@@ -47,7 +47,7 @@ import { toAvailableCommandsFromPiGetCommands } from './pi-commands.js'
 import { maybeAuthRequiredError } from './auth-required.js'
 import { isAbsolute } from 'node:path'
 import { existsSync, readFileSync, realpathSync, readdirSync, statSync, unlinkSync } from 'node:fs'
-import type { AvailableCommand } from '@agentclientprotocol/sdk'
+import type { AvailableCommand } from '@agentclientprotocol/sdk/unstable'
 import { join, dirname, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
 
@@ -119,8 +119,8 @@ import { fileURLToPath } from 'node:url'
 
 const pkg = readNearestPackageJson(import.meta.url)
 
-export class PiAcpAgent implements ACPAgent {
-  private readonly conn: AgentSideConnection
+export class PiAcpAgent {
+  private readonly conn: PiAcpClient
   private readonly sessions = new SessionManager()
   private readonly store = new SessionStore()
   private readonly restoringSessions = new Map<string, Promise<PiAcpSession>>()
@@ -129,15 +129,19 @@ export class PiAcpAgent implements ACPAgent {
     this.sessions.disposeAll()
   }
 
+  closeSession(sessionId: string): void {
+    this.sessions.close(sessionId)
+  }
+
   // Remember recent session cwd and use it as the default filter.
   private lastSessionCwd: string | null = null
 
-  constructor(conn: AgentSideConnection, _config?: unknown) {
+  constructor(conn: PiAcpClient, _config?: unknown) {
     this.conn = conn
     void _config
   }
 
-  private cleanupFailedNewSession(sessionId: string, state?: any | null): void {
+  private cleanupFailedNewSession(sessionId: string, state?: any): void {
     this.sessions.close(sessionId)
 
     const sessionFile =
@@ -373,14 +377,13 @@ export class PiAcpAgent implements ACPAgent {
           updateNotice
         })
 
-    if (preludeText)
-      session.setStartupInfo(preludeText)
+    if (preludeText) session.setStartupInfo(preludeText)
 
-      // Policy: within a single ACP connection (one client window), keep only one live pi subprocess.
-      // This avoids leaking subprocesses when clients start new sessions but don't explicitly close old ones.
-      // It does NOT affect other client windows because they run in separate agent processes.
-      //
-      // (Tests sometimes stub out `this.sessions`, so guard the call.)
+    // Policy: within a single ACP connection (one client window), keep only one live pi subprocess.
+    // This avoids leaking subprocesses when clients start new sessions but don't explicitly close old ones.
+    // It does NOT affect other client windows because they run in separate agent processes.
+    //
+    // (Tests sometimes stub out `this.sessions`, so guard the call.)
     ;(this.sessions as any).closeAllExcept?.(session.sessionId)
 
     const response = {
@@ -415,7 +418,7 @@ export class PiAcpAgent implements ACPAgent {
             includeExtensionCommands: false
           })
 
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'available_commands_update',
@@ -427,14 +430,16 @@ export class PiAcpAgent implements ACPAgent {
           // Fall back to file-based prompt templates (legacy behavior).
         }
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'available_commands_update',
             availableCommands: mergeCommands(toAvailableCommands(fileCommands), builtinAvailableCommands())
           }
         })
-      })()
+      })().catch(() => {
+        // The client may disconnect before deferred notifications finish.
+      })
     }, 0)
 
     return response
@@ -475,7 +480,7 @@ export class PiAcpAgent implements ACPAgent {
 
         const text = headerLines.join('\n') + (summary ? `\n\n${summary}` : '')
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -510,7 +515,7 @@ export class PiAcpAgent implements ACPAgent {
         // Fallback if stats shape changes.
         const text = lines.length ? lines.join('\n') : `Session stats:\n${JSON.stringify(stats, null, 2)}`
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -524,7 +529,7 @@ export class PiAcpAgent implements ACPAgent {
       if (cmd === 'name') {
         const name = args.join(' ').trim()
         if (!name) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -542,7 +547,7 @@ export class PiAcpAgent implements ACPAgent {
             ? ' This requires a newer pi version that supports `set_session_name` in RPC mode.'
             : ''
 
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -552,7 +557,7 @@ export class PiAcpAgent implements ACPAgent {
           return { stopReason: 'end_turn' }
         }
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -570,7 +575,7 @@ export class PiAcpAgent implements ACPAgent {
 
         // If no arg, just report current.
         if (!modeRaw) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -584,7 +589,7 @@ export class PiAcpAgent implements ACPAgent {
         }
 
         if (modeRaw !== 'all' && modeRaw !== 'one-at-a-time') {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -599,7 +604,7 @@ export class PiAcpAgent implements ACPAgent {
 
         await session.proc.setSteeringMode(modeRaw as 'all' | 'one-at-a-time')
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -617,7 +622,7 @@ export class PiAcpAgent implements ACPAgent {
 
         // If no arg, just report current.
         if (!modeRaw) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -631,7 +636,7 @@ export class PiAcpAgent implements ACPAgent {
         }
 
         if (modeRaw !== 'all' && modeRaw !== 'one-at-a-time') {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -646,7 +651,7 @@ export class PiAcpAgent implements ACPAgent {
 
         await session.proc.setFollowUpMode(modeRaw as 'all' | 'one-at-a-time')
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -696,7 +701,7 @@ export class PiAcpAgent implements ACPAgent {
 
         const changelogPath = findChangelog()
         if (!changelogPath) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -710,7 +715,7 @@ export class PiAcpAgent implements ACPAgent {
         try {
           text = readFileSync(changelogPath, 'utf-8')
         } catch (e: any) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -724,7 +729,7 @@ export class PiAcpAgent implements ACPAgent {
         const maxChars = 20_000
         if (text.length > maxChars) text = text.slice(0, maxChars) + '\n\n...(truncated)...'
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -745,7 +750,7 @@ export class PiAcpAgent implements ACPAgent {
         const messageCount = typeof state?.messageCount === 'number' ? state.messageCount : 0
 
         if (!sessionFile || messageCount === 0 || !existsSync(sessionFile)) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -761,7 +766,7 @@ export class PiAcpAgent implements ACPAgent {
         try {
           const raw = readFileSync(sessionFile, 'utf-8')
           if (raw.trim().length === 0) {
-            await this.conn.sessionUpdate({
+            await this.conn.notify(methods.client.session.update, {
               sessionId: session.sessionId,
               update: {
                 sessionUpdate: 'agent_message_chunk',
@@ -774,7 +779,7 @@ export class PiAcpAgent implements ACPAgent {
             return { stopReason: 'end_turn' }
           }
         } catch {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -795,7 +800,7 @@ export class PiAcpAgent implements ACPAgent {
           const result = await session.proc.exportHtml(outputPath)
           resultPath = result.path
         } catch (e: any) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -809,7 +814,7 @@ export class PiAcpAgent implements ACPAgent {
         }
 
         if (!resultPath) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -826,7 +831,7 @@ export class PiAcpAgent implements ACPAgent {
 
         // Emit a short prefix + a resource link. Many clients concatenate chunks into a single
         // assistant message, so this avoids the "link + duplicate plain text" look.
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -837,7 +842,7 @@ export class PiAcpAgent implements ACPAgent {
           }
         })
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -869,7 +874,7 @@ export class PiAcpAgent implements ACPAgent {
 
         await session.proc.setAutoCompaction(enabled)
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'agent_message_chunk',
@@ -983,7 +988,7 @@ export class PiAcpAgent implements ACPAgent {
       if (role === 'user') {
         const text = normalizePiMessageText(m?.content)
         if (text) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'user_message_chunk',
@@ -996,7 +1001,7 @@ export class PiAcpAgent implements ACPAgent {
       if (role === 'assistant') {
         const text = normalizePiAssistantText(m?.content)
         if (text) {
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'agent_message_chunk',
@@ -1014,7 +1019,7 @@ export class PiAcpAgent implements ACPAgent {
 
         if (isBash) {
           const text = bashResultText(m)
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'tool_call',
@@ -1027,7 +1032,7 @@ export class PiAcpAgent implements ACPAgent {
             }
           })
 
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'tool_call_update',
@@ -1043,7 +1048,7 @@ export class PiAcpAgent implements ACPAgent {
         }
 
         // Create a synthetic ACP tool call to render historic tool usage.
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'tool_call',
@@ -1057,7 +1062,7 @@ export class PiAcpAgent implements ACPAgent {
         })
 
         const text = toolResultToText(m)
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'tool_call_update',
@@ -1093,7 +1098,7 @@ export class PiAcpAgent implements ACPAgent {
             includeExtensionCommands: false
           })
 
-          await this.conn.sessionUpdate({
+          await this.conn.notify(methods.client.session.update, {
             sessionId: session.sessionId,
             update: {
               sessionUpdate: 'available_commands_update',
@@ -1105,14 +1110,16 @@ export class PiAcpAgent implements ACPAgent {
           // fall back
         }
 
-        await this.conn.sessionUpdate({
+        await this.conn.notify(methods.client.session.update, {
           sessionId: session.sessionId,
           update: {
             sessionUpdate: 'available_commands_update',
             availableCommands: mergeCommands(toAvailableCommands(fileCommands), builtinAvailableCommands())
           }
         })
-      })()
+      })().catch(() => {
+        // The client may disconnect before deferred notifications finish.
+      })
     }, 0)
 
     return response
@@ -1197,7 +1204,7 @@ export class PiAcpAgent implements ACPAgent {
 
 async function getThinkingState(
   proc: PiRpcProcess,
-  pre?: { state?: any | null }
+  pre?: { state?: any }
 ): Promise<{
   availableModes: Array<{
     id: string
@@ -1226,7 +1233,7 @@ async function getThinkingState(
 
 async function getSessionConfiguration(
   proc: PiRpcProcess,
-  pre?: { state?: any | null; availableModels?: any | null }
+  pre?: { state?: any; availableModels?: any }
 ): Promise<{
   configOptions: SessionConfigOption[]
   models: {
@@ -1303,7 +1310,7 @@ function buildConfigOptions(state: {
 
 async function getModelState(
   proc: PiRpcProcess,
-  pre?: { state?: any | null; availableModels?: any | null }
+  pre?: { state?: any; availableModels?: any }
 ): Promise<{
   availableModels: AdvertisedModel[]
   currentModelId: string
@@ -1369,17 +1376,17 @@ async function getModelState(
 }
 
 async function emitConfigOptionsUpdate(
-  conn: AgentSideConnection,
+  conn: PiAcpClient,
   sessionId: string,
   proc: PiRpcProcess
 ): Promise<SessionConfigOption[]> {
   const { configOptions, modes } = await getSessionConfiguration(proc)
 
-  await conn.sessionUpdate({
+  await conn.notify(methods.client.session.update, {
     sessionId,
     update: { sessionUpdate: 'current_mode_update', currentModeId: modes.currentModeId }
   })
-  await conn.sessionUpdate({
+  await conn.notify(methods.client.session.update, {
     sessionId,
     update: {
       sessionUpdate: 'config_option_update',

@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -101,7 +101,7 @@ test('PiAcpAgent: newSession returns Internal error on non-auth model probe fail
 for (const failure of ['discovery', 'auth', 'invalid-current', 'inconsistent-current', 'state']) {
   test(`PiAcpAgent: cleans up only the new session after ${failure} configuration failure`, async t => {
     const root = mkdtempSync(join(tmpdir(), 'pi-acp-thinking-failure-'))
-    t.after(() => rmSync(root, { recursive: true, force: true }))
+    t.onTestFinished(() => rmSync(root, { recursive: true, force: true }))
     const sessionFile = join(root, 'failed.jsonl')
     const existingFile = join(root, 'existing.jsonl')
     writeFileSync(sessionFile, 'new session\n')

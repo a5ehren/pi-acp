@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test, afterEach, vi } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,6 +8,8 @@ import { SessionStore } from '../../src/acp/session-store.js'
 import { PiAcpAgent } from '../../src/acp/agent.js'
 import { PiRpcProcess } from '../../src/pi-rpc/process.js'
 import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
+
+afterEach(() => vi.restoreAllMocks())
 
 function fixture() {
   const conn = new FakeAgentSideConnection()
@@ -165,12 +167,12 @@ test('invalid configuration and legacy mode requests do not mutate Pi', async ()
 
 for (const load of [false, true]) {
   for (const levels of [['off'], ['low', 'high', 'max'], ['ordinary', 'mean']]) {
-    test(`${load ? 'load' : 'new'} session advertises exact ${levels} levels`, async t => {
+    test(`${load ? 'load' : 'new'} session advertises exact ${levels.join(',')} levels`, async () => {
       const { agent, proc, state } = fixture()
       state.thinkingLevel = levels[levels.length - 1]
       proc.getAvailableThinkingLevels = async () => levels
-      t.mock.method(globalThis, 'setTimeout', () => 0 as unknown as ReturnType<typeof setTimeout>)
-      t.mock.method(PiRpcProcess, 'spawn', async () => proc as unknown as PiRpcProcess)
+      vi.spyOn(globalThis, 'setTimeout').mockImplementation(() => 0 as unknown as ReturnType<typeof setTimeout>)
+      vi.spyOn(PiRpcProcess, 'spawn').mockImplementation(async () => proc as unknown as PiRpcProcess)
       Reflect.set(agent, 'store', {
         get: () => ({ cwd: process.cwd(), sessionFile: '/tmp/thinking-test.jsonl' }),
         upsert() {},
@@ -197,8 +199,8 @@ for (const load of [false, true]) {
 for (const failure of ['discovery', 'missing-current', 'inconsistent-current', 'state']) {
   test(`load configuration ${failure} failure closes restored child and preserves history for retry`, async t => {
     const root = mkdtempSync(join(tmpdir(), 'pi-acp-load-thinking-'))
-    t.after(() => rmSync(root, { recursive: true, force: true }))
-    t.mock.method(globalThis, 'setTimeout', () => 0 as unknown as ReturnType<typeof setTimeout>)
+    t.onTestFinished(() => rmSync(root, { recursive: true, force: true }))
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(() => 0 as unknown as ReturnType<typeof setTimeout>)
     const sessionFile = join(root, 'history.jsonl')
     writeFileSync(sessionFile, 'persisted history\n')
     const store = new SessionStore(join(root, 'map.json'))
@@ -223,8 +225,8 @@ for (const failure of ['discovery', 'missing-current', 'inconsistent-current', '
         }
       } as unknown as PiRpcProcess
     })
-    t.after(() => sessions.disposeAll())
-    t.mock.method(PiRpcProcess, 'spawn', async () => {
+    t.onTestFinished(() => sessions.disposeAll())
+    vi.spyOn(PiRpcProcess, 'spawn').mockImplementation(async () => {
       spawns++
       return {
         ...proc,

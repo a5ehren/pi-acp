@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test, vi } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 
 import { PiAcpAgent } from '../../src/acp/agent.js'
@@ -13,8 +13,8 @@ class FakeStore {
 }
 
 test('PiAcpAgent: loadSession replays toolResult as tool_call + tool_call_update', async () => {
-  const originalSpawn = PiRpcProcess.spawn
-  ;(PiRpcProcess as any).spawn = async () => {
+  const spawnMock = vi.spyOn(PiRpcProcess, 'spawn')
+  spawnMock.mockImplementation(async () => {
     return {
       onEvent: () => () => {},
       getMessages: async () => ({
@@ -33,7 +33,7 @@ test('PiAcpAgent: loadSession replays toolResult as tool_call + tool_call_update
       getAvailableModels: async () => ({ models: [] }),
       getState: async () => ({ thinkingLevel: 'medium' })
     } as any
-  }
+  })
 
   try {
     const conn = new FakeAgentSideConnection()
@@ -63,6 +63,6 @@ test('PiAcpAgent: loadSession replays toolResult as tool_call + tool_call_update
     })
     assert.equal(toolCallUpdate.rawOutput, undefined)
   } finally {
-    PiRpcProcess.spawn = originalSpawn
+    spawnMock.mockRestore()
   }
 })

@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test, vi } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -71,9 +71,9 @@ test('PiAcpAgent: listSessions lists pi sessions and loadSession replays history
     assert.equal(s?.title, 'My Named Session')
 
     // 2) load session: mock spawn to return fake proc with getMessages
-    const originalSpawn = PiRpcProcess.spawn
+    const spawnMock = vi.spyOn(PiRpcProcess, 'spawn')
 
-    ;(PiRpcProcess as any).spawn = async (params: any) => {
+    spawnMock.mockImplementation(async (params: any) => {
       // ensure loadSession resolves to some jsonl that ends with our expected filename
       assert.ok(typeof params.sessionPath === 'string')
       assert.ok(params.sessionPath.endsWith('/0000_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.jsonl'))
@@ -93,7 +93,7 @@ test('PiAcpAgent: listSessions lists pi sessions and loadSession replays history
         getAvailableModels: async () => ({ models: [] }),
         getState: async () => ({ thinkingLevel: 'medium' })
       } as any
-    }
+    })
 
     try {
       await agent.loadSession({ sessionId: 'sess-1', cwd: '/tmp/project', mcpServers: [], _meta: null } as any)
@@ -120,7 +120,7 @@ test('PiAcpAgent: listSessions lists pi sessions and loadSession replays history
         [{ sessionId: 'sess-1', update: { sessionUpdate: 'usage_update', used: 12_345, size: 200_000 } }]
       )
     } finally {
-      PiRpcProcess.spawn = originalSpawn
+      spawnMock.mockRestore()
     }
   } finally {
     if (oldEnv === undefined) delete process.env.PI_CODING_AGENT_DIR

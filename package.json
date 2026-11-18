@@ -1,6 +1,6 @@
 {
   "name": "pi-acp",
-  "version": "0.0.34",
+  "version": "1.5.2",
   "description": "ACP adapter for pi coding agent",
   "license": "MIT",
   "author": "Sergii Kozak <svkozak@gmail.com>",
@@ -23,8 +23,9 @@
     "adapter"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
+  "packageManager": "pnpm@12.21.0",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -34,32 +35,30 @@
     "dist"
   ],
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "tsup",
+    "dev": "vpx src/index.ts",
+    "build": "vp pack",
     "start": "node dist/index.js",
-    "format": "prettier . --write",
+    "format": "vp fmt .",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint .",
-    "test": "node --import tsx --test test/**/*.test.ts",
+    "lint": "vp lint .",
+    "test": "vp test run",
     "smoke": "node scripts/smoke-acp.mjs",
-    "prepack": "npm run build",
-    "prepublishOnly": "npm run test && npm run build"
+    "prepack": "pnpm run build",
+    "prepublishOnly": "pnpm run test && pnpm run build",
+    "prepare": "vp config --no-hooks --no-agent",
+    "smoke:v2": "node scripts/acp-v2-probe.mjs"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.26.0",
+    "@agentclientprotocol/sdk": "^2.8.0",
     "cross-spawn": "^7.0.6",
-    "zod": "^3.25.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "@eslint/js": "^9.17.0",
     "@types/cross-spawn": "^6.0.6",
-    "@types/node": "^22.0.0",
-    "eslint": "^9.17.0",
-    "globals": "^15.14.0",
-    "prettier": "^3.8.3",
-    "tsup": "^8.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.6.0",
-    "typescript-eslint": "^8.18.0"
+    "@types/node": "^24.19.2",
+    "globals": "^17.14.0",
+    "typescript": "^5.9.3",
+    "vite-plus": "1.7.0",
+    "vitest": "5.1.1"
   }
 }
