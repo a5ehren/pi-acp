@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test, afterEach, vi } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -8,6 +8,8 @@ import { listPiSessions } from '../../src/acp/pi-sessions.js'
 import { SessionStore } from '../../src/acp/session-store.js'
 import { PiRpcProcess } from '../../src/pi-rpc/process.js'
 import { FakeAgentSideConnection, FakePiRpcProcess, asAgentConn } from '../helpers/fakes.js'
+
+afterEach(() => vi.restoreAllMocks())
 
 class RestoredPiProcess extends FakePiRpcProcess {
   readonly assignedNames: string[] = []
@@ -57,7 +59,7 @@ for (const mode of ['load', 'prompt'] as const) {
       const expectedTitle = titleState === 'saved' ? 'Saved title' : 'Original ' + '🚀'.repeat(71)
       const previousAgentDir = process.env.PI_CODING_AGENT_DIR
       process.env.PI_CODING_AGENT_DIR = root
-      t.after(() => {
+      t.onTestFinished(() => {
         if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
         else process.env.PI_CODING_AGENT_DIR = previousAgentDir
         rmSync(root, { recursive: true, force: true })
@@ -69,8 +71,8 @@ for (const mode of ['load', 'prompt'] as const) {
       store.upsert({ sessionId: 'restored', cwd: root, sessionFile })
       Object.defineProperty(agent, 'store', { value: store })
       const proc = new RestoredPiProcess()
-      t.mock.method(PiRpcProcess, 'spawn', async () => proc as unknown as PiRpcProcess)
-      t.after(() => agent.dispose())
+      vi.spyOn(PiRpcProcess, 'spawn').mockImplementation(async () => proc as unknown as PiRpcProcess)
+      t.onTestFinished(() => agent.dispose())
 
       if (mode === 'load') {
         await agent.loadSession({ sessionId: 'restored', cwd: root, mcpServers: [] })

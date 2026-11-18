@@ -221,8 +221,8 @@ export class PiRpcProcess {
       const sessionFile = typeof state?.sessionFile === 'string' ? state.sessionFile : null
       if (sessionFile) {
         const { mkdirSync } = await import('node:fs')
-        const { dirname } = await import('node:path')
-        mkdirSync(dirname(sessionFile), { recursive: true })
+        const path = await import('node:path')
+        mkdirSync(path.dirname(sessionFile), { recursive: true })
       }
     } catch {
       // ignore for now

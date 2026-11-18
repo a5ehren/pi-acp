@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { toolResultToText } from '../../src/acp/translate/pi-tools.js'
 
@@ -37,4 +37,12 @@ test('toolResultToText: extracts bash stdout/stderr from details', () => {
   assert.match(text, /stderr:/)
   assert.match(text, /warn/)
   assert.match(text, /exit code: 0/)
+})
+
+test('toolResultToText: retains data when JSON serialization fails', () => {
+  const circular: { value: string; self?: unknown } = { value: 'useful payload' }
+  circular.self = circular
+  assert.match(toolResultToText(circular), /useful payload/)
+  assert.match(toolResultToText({ value: 123n }), /123/)
+  assert.equal(toolResultToText(123n), '123')
 })

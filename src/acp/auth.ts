@@ -1,4 +1,4 @@
-import type { AuthMethod } from '@agentclientprotocol/sdk'
+import type { AuthMethod } from '@agentclientprotocol/sdk/unstable'
 
 export const PI_SETUP_METHOD_ID = 'pi_terminal_login'
 
@@ -30,7 +30,7 @@ export function getAuthMethods(opts?: { supportsTerminalAuthMeta?: boolean }): A
     const launch = terminalAuthLaunchSpec()
 
     method._meta = {
-      ...(method._meta ?? {}),
+      ...method._meta,
       'terminal-auth': {
         ...launch,
         label: 'Launch pi'

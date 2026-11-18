@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 
 // Minimal local impl (mirrors src/acp/agent.ts behavior)

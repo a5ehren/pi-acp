@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { PiAcpAgent } from '../../src/acp/agent.js'
 import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
@@ -16,9 +16,9 @@ test('PiAcpAgent: quietStartup=true disables startup info generation/emission', 
   // Force quietStartup in pi settings by pointing PI_CODING_AGENT_DIR at a temp dir.
   const { mkdtempSync, writeFileSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
-  const { join } = await import('node:path')
-  const dir = mkdtempSync(join(tmpdir(), 'pi-acp-quietstartup-'))
-  writeFileSync(join(dir, 'settings.json'), JSON.stringify({ quietStartup: true }, null, 2), 'utf-8')
+  const path = await import('node:path')
+  const dir = mkdtempSync(path.join(tmpdir(), 'pi-acp-quietstartup-'))
+  writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ quietStartup: true }, null, 2), 'utf-8')
   process.env.PI_CODING_AGENT_DIR = dir
 
   // Spy on setTimeout calls (agent schedules startup info + available commands)

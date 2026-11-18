@@ -11,10 +11,11 @@ jobs:
   session-path:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
-          node-version: '22.x'
-      - run: npm ci
-      - run: npm run typecheck
-      - run: node --import tsx --test test/unit/pi-rpc-session-path.test.ts test/unit/pi-command.test.ts
+          node-version-file: '.node-version'
+      - uses: pnpm/action-setup@v6
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm test test/unit/pi-rpc-session-path.test.ts test/unit/pi-command.test.ts

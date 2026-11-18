@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { PiAcpAgent } from '../../src/acp/agent.js'
 import { FakeAgentSideConnection, asAgentConn } from '../helpers/fakes.js'
@@ -14,20 +14,20 @@ class FakeSessions {
 test('PiAcpAgent: startup info includes project-level packages from .pi/settings.json', async () => {
   const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
   const { tmpdir } = await import('node:os')
-  const { join } = await import('node:path')
+  const path = await import('node:path')
 
   const prevAgentDir = process.env.PI_CODING_AGENT_DIR
 
   // Create a fake global agent dir (empty settings)
-  const agentDir = mkdtempSync(join(tmpdir(), 'pi-acp-global-'))
-  writeFileSync(join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:global-ext'] }), 'utf-8')
+  const agentDir = mkdtempSync(path.join(tmpdir(), 'pi-acp-global-'))
+  writeFileSync(path.join(agentDir, 'settings.json'), JSON.stringify({ packages: ['npm:global-ext'] }), 'utf-8')
   process.env.PI_CODING_AGENT_DIR = agentDir
 
   // Create a fake project dir with .pi/settings.json containing packages
-  const projectDir = mkdtempSync(join(tmpdir(), 'pi-acp-project-'))
-  const piDir = join(projectDir, '.pi')
+  const projectDir = mkdtempSync(path.join(tmpdir(), 'pi-acp-project-'))
+  const piDir = path.join(projectDir, '.pi')
   mkdirSync(piDir)
-  writeFileSync(join(piDir, 'settings.json'), JSON.stringify({ packages: ['/path/to/local-extension'] }), 'utf-8')
+  writeFileSync(path.join(piDir, 'settings.json'), JSON.stringify({ packages: ['/path/to/local-extension'] }), 'utf-8')
 
   const realSetTimeout = globalThis.setTimeout
   ;(globalThis as any).setTimeout = () => {

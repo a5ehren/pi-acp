@@ -11,16 +11,16 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: '24.x'
+          node-version-file: '.node-version'
           registry-url: 'https://registry.npmjs.org'
 
-      - run: npm install -g npm@latest
+      - uses: pnpm/action-setup@v6
 
-      - run: npm ci
-      - run: npm run build --if-present
-      - run: npm test
-      - run: npm publish --provenance
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run --if-present build
+      - run: pnpm test
+      - run: pnpm publish --provenance --no-git-checks --skip-manifest-obfuscation

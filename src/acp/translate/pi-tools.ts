@@ -1,3 +1,5 @@
+import { inspect } from 'node:util'
+
 export function toolResultToText(result: unknown): string {
   if (!result) return ''
 
@@ -46,6 +48,6 @@ export function toolResultToText(result: unknown): string {
   try {
     return JSON.stringify(result, null, 2)
   } catch {
-    return String(result)
+    return typeof result === 'bigint' ? result.toString() : inspect(result)
   }
 }

@@ -1,4 +1,4 @@
-import test from 'node:test'
+import { test, vi } from 'vite-plus/test'
 import assert from 'node:assert/strict'
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -44,13 +44,13 @@ test('PiAcpAgent: prompt auto-restores a missing session from SessionStore', asy
     }
   }))
 
-  const originalSpawn = PiRpcProcess.spawn
-  ;(PiRpcProcess as any).spawn = async (params: any) => {
+  const spawnMock = vi.spyOn(PiRpcProcess, 'spawn')
+  spawnMock.mockImplementation(async (params: any) => {
     spawnCalls.push(params)
     return {
       onEvent: () => () => {}
     } as any
-  }
+  })
 
   try {
     const agent = new PiAcpAgent(asAgentConn(conn), {} as any)
@@ -92,7 +92,7 @@ test('PiAcpAgent: prompt auto-restores a missing session from SessionStore', asy
       }
     ])
   } finally {
-    PiRpcProcess.spawn = originalSpawn
+    spawnMock.mockRestore()
   }
 })
 
@@ -135,8 +135,8 @@ test('PiAcpAgent: setSessionConfigOption auto-restores via pi session discovery 
     }
   }))
 
-  const originalSpawn = PiRpcProcess.spawn
-  ;(PiRpcProcess as any).spawn = async (params: any) => {
+  const spawnMock = vi.spyOn(PiRpcProcess, 'spawn')
+  spawnMock.mockImplementation(async (params: any) => {
     spawnCalls.push(params)
     return {
       onEvent: () => () => {},
@@ -153,7 +153,7 @@ test('PiAcpAgent: setSessionConfigOption auto-restores via pi session discovery 
         state.model = { provider, id: modelId }
       }
     } as any
-  }
+  })
 
   try {
     const agent = new PiAcpAgent(asAgentConn(conn), {} as any)
@@ -205,7 +205,7 @@ test('PiAcpAgent: setSessionConfigOption auto-restores via pi session discovery 
       }
     ])
   } finally {
-    PiRpcProcess.spawn = originalSpawn
+    spawnMock.mockRestore()
     if (prevAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR
     else process.env.PI_CODING_AGENT_DIR = prevAgentDir
   }
@@ -215,13 +215,13 @@ test('PiAcpAgent: cancel ignores stale session IDs without spawning a restore pr
   const conn = new FakeAgentSideConnection()
   const spawnCalls: any[] = []
 
-  const originalSpawn = PiRpcProcess.spawn
-  ;(PiRpcProcess as any).spawn = async (params: any) => {
+  const spawnMock = vi.spyOn(PiRpcProcess, 'spawn')
+  spawnMock.mockImplementation(async (params: any) => {
     spawnCalls.push(params)
     return {
       onEvent: () => () => {}
     } as any
-  }
+  })
 
   try {
     const agent = new PiAcpAgent(asAgentConn(conn), {} as any)
@@ -234,6 +234,6 @@ test('PiAcpAgent: cancel ignores stale session IDs without spawning a restore pr
     assert.deepEqual(spawnCalls, [])
     assert.deepEqual(conn.updates, [])
   } finally {
-    PiRpcProcess.spawn = originalSpawn
+    spawnMock.mockRestore()
   }
 })
